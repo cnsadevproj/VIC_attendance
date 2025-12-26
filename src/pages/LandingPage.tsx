@@ -4,6 +4,13 @@ import { fetchTodayStaff, type TodayStaff } from '../config/staffSchedule'
 
 type Step = 'guide' | 'staff-select'
 
+// 전체 담당자 목록
+const ALL_STAFF = [
+  '김종규', '이건우', '조민경', '노예원', '이예진',
+  '홍선영', '장보경', '김솔', '홍승민', '조현정',
+  '강현수', '민수정', '박한비', '서률지', '정수빈'
+]
+
 export default function LandingPage() {
   const navigate = useNavigate()
   const [step, setStep] = useState<Step>('guide')
@@ -11,6 +18,7 @@ export default function LandingPage() {
   const [todayStaff, setTodayStaff] = useState<TodayStaff>({ grade1: null, grade2: null })
   const [loading, setLoading] = useState(true)
   const [selectedGrade, setSelectedGrade] = useState<1 | 2 | null>(null)
+  const [showOtherStaff, setShowOtherStaff] = useState(false)
 
   // Get today's date in Korean format
   const today = new Date().toLocaleDateString('ko-KR', {
@@ -182,7 +190,10 @@ export default function LandingPage() {
             {selectedGrade && (
               <div>
                 <button
-                  onClick={() => setSelectedGrade(null)}
+                  onClick={() => {
+                    setSelectedGrade(null)
+                    setShowOtherStaff(false)
+                  }}
                   className="mb-4 text-gray-500 hover:text-gray-700"
                 >
                   ← 학년 다시 선택
@@ -209,6 +220,39 @@ export default function LandingPage() {
                     <p className="text-center text-gray-500 py-10">
                       오늘 날짜에 등록된 담당자가 없습니다.
                     </p>
+                  )}
+
+                  {/* 그 외 버튼 */}
+                  <button
+                    onClick={() => setShowOtherStaff(!showOtherStaff)}
+                    className="w-full py-4 rounded-xl font-semibold text-lg transition-all
+                      bg-gray-100 text-gray-600 hover:bg-gray-200 border-2 border-gray-300"
+                  >
+                    {showOtherStaff ? '접기 ▲' : '그 외 ▼'}
+                  </button>
+
+                  {/* 그 외 담당자 목록 */}
+                  {showOtherStaff && (
+                    <div className="flex flex-wrap gap-2 p-4 bg-gray-50 rounded-xl">
+                      {ALL_STAFF
+                        .filter(name => {
+                          const currentStaff = getStaffForGrade(selectedGrade)
+                          return !currentStaff?.includes(name)
+                        })
+                        .map((staffName) => (
+                          <button
+                            key={staffName}
+                            onClick={() => handleStaffSelect(staffName, selectedGrade)}
+                            className={`px-4 py-2 rounded-lg font-medium text-sm transition-all
+                              ${selectedGrade === 1
+                                ? 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200'
+                                : 'bg-green-50 text-green-700 hover:bg-green-100 border border-green-200'
+                              }`}
+                          >
+                            {staffName}
+                          </button>
+                        ))}
+                    </div>
                   )}
                 </div>
               </div>

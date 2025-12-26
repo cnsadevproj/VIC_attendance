@@ -7,13 +7,17 @@ import { getStudentBySeatId } from '../../config/mockStudents'
 interface SeatMapProps {
   zoneId: string
   attendanceRecords: Map<string, AttendanceRecord>
+  studentNotes?: Record<string, string>  // 학생별 특이사항
   onSeatClick: (seatId: string) => void
+  onSeatLongPress?: (seatId: string) => void
 }
 
 export default function SeatMap({
   zoneId,
   attendanceRecords,
+  studentNotes = {},
   onSeatClick,
+  onSeatLongPress,
 }: SeatMapProps) {
   const layout = useMemo(() => {
     return SEAT_LAYOUTS[zoneId] || []
@@ -56,6 +60,8 @@ export default function SeatMap({
 
                 // Use seatId for record lookup
                 const record = attendanceRecords.get(seatId)
+                const hasNote = !!studentNotes[seatId]
+                const hasPreAbsence = !!student?.preAbsence
 
                 return (
                   <Seat
@@ -65,8 +71,10 @@ export default function SeatMap({
                     studentId={student?.studentId}
                     isAssigned={isAssigned}
                     status={record?.status || 'unchecked'}
-                    hasNote={!!record?.note}
+                    hasPreAbsence={hasPreAbsence}
+                    hasNote={hasNote}
                     onClick={() => onSeatClick(seatId)}
+                    onLongPress={isAssigned ? () => onSeatLongPress?.(seatId) : undefined}
                   />
                 )
               })}

@@ -21,7 +21,7 @@ export interface Student {
 // Attendance record for UI
 export interface AttendanceRecord {
   studentId: string
-  status: 'present' | 'absent' | 'late' | 'other' | 'unchecked'
+  status: 'present' | 'absent' | 'unchecked'
   note?: string
   isModified?: boolean
   staffName?: string
@@ -65,14 +65,9 @@ export const STATUS_CONFIG = {
     color: 'red',
     bgClass: 'seat-absent',
   },
-  late: {
-    label: '지각',
-    color: 'amber',
-    bgClass: 'seat-late',
-  },
-  other: {
-    label: '기타',
-    color: 'blue',
-    bgClass: 'seat-other',
+  unchecked: {
+    label: '미체크',
+    color: 'gray',
+    bgClass: 'seat-unchecked',
   },
 } as const
