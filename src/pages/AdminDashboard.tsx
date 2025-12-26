@@ -41,53 +41,32 @@ const ZONES = [
   { id: '3D', name: '3층 D구역', grade: 2 },
 ]
 
-// 담당자 목록
-const STAFF_LIST = [
-  '김종규', '이건우', '조민경', '노예원', '이예진',
-  '홍선영', '장보경', '김솔', '홍승민', '조현정',
-  '강현수', '민수정', '박한비', '서률지', '정수빈'
-]
-
-// 운영 날짜 범위 (2025.12.15~12.26, 2026.01.07~02.03)
-function getOperatingDates(): string[] {
-  const dates: string[] = []
-
-  // 2025년 12월 15일 ~ 26일
-  for (let d = 15; d <= 26; d++) {
-    dates.push(`2025-12-${String(d).padStart(2, '0')}`)
-  }
-
-  // 2026년 1월 7일 ~ 31일
-  for (let d = 7; d <= 31; d++) {
-    dates.push(`2026-01-${String(d).padStart(2, '0')}`)
-  }
-
-  // 2026년 2월 1일 ~ 3일
-  for (let d = 1; d <= 3; d++) {
-    dates.push(`2026-02-${String(d).padStart(2, '0')}`)
-  }
-
-  return dates
+// 고정된 담당자 스케줄 (2026년 1월 7일 ~ 2월 3일)
+const DATE_STAFF_SCHEDULE: Record<string, { grade1: [string, string], grade2: [string, string] }> = {
+  '2026-01-07': { grade1: ['이예진', '조현정'], grade2: ['강현수', '김종규'] },
+  '2026-01-08': { grade1: ['홍선영', '홍승민'], grade2: ['민수정', '정수빈'] },
+  '2026-01-09': { grade1: ['장보경', '김솔'], grade2: ['박한비', '서률지'] },
+  '2026-01-12': { grade1: ['노예원', '조민경'], grade2: ['홍선영', '강현수'] },
+  '2026-01-13': { grade1: ['이건우', '장보경'], grade2: ['김솔', '박한비'] },
+  '2026-01-14': { grade1: ['이예진', '조현정'], grade2: ['민수정', '홍승민'] },
+  '2026-01-15': { grade1: ['서률지', '정수빈'], grade2: ['김종규', '이건우'] },
+  '2026-01-16': { grade1: ['홍승민', '홍선영'], grade2: ['조민경', '노예원'] },
+  '2026-01-19': { grade1: ['장보경', '박한비'], grade2: ['서률지', '이예진'] },
+  '2026-01-20': { grade1: ['이건우', '김종규'], grade2: ['김솔', '조현정'] },
+  '2026-01-21': { grade1: ['강현수', '민수정'], grade2: ['홍선영', '장보경'] },
+  '2026-01-22': { grade1: ['정수빈', '조현정'], grade2: ['노예원', '조민경'] },
+  '2026-01-23': { grade1: ['김솔', '강현수'], grade2: ['이예진', '서률지'] },
+  '2026-01-26': { grade1: ['민수정', '김종규'], grade2: ['홍승민', '정수빈'] },
+  '2026-01-27': { grade1: ['박한비', '홍선영'], grade2: ['조민경', '노예원'] },
+  '2026-01-28': { grade1: ['이예진', '서률지'], grade2: ['장보경', '김솔'] },
+  '2026-01-29': { grade1: ['노예원', '조현정'], grade2: ['강현수', '민수정'] },
+  '2026-01-30': { grade1: ['김종규', '이건우'], grade2: ['정수빈', '박한비'] },
+  '2026-02-02': { grade1: ['홍승민', '조민경'], grade2: ['서률지', '강현수'] },
+  '2026-02-03': { grade1: ['민수정', '박한비'], grade2: ['정수빈', '이건우'] },
 }
 
-const OPERATING_DATES = getOperatingDates()
-
-// 날짜별 담당자 스케줄 동적 생성
-function generateStaffSchedule(): Record<string, { grade1: [string, string], grade2: [string, string] }> {
-  const schedule: Record<string, { grade1: [string, string], grade2: [string, string] }> = {}
-
-  OPERATING_DATES.forEach((dateStr, index) => {
-    const staffIndex = index % STAFF_LIST.length
-    schedule[dateStr] = {
-      grade1: [STAFF_LIST[staffIndex], STAFF_LIST[(staffIndex + 1) % STAFF_LIST.length]],
-      grade2: [STAFF_LIST[(staffIndex + 2) % STAFF_LIST.length], STAFF_LIST[(staffIndex + 3) % STAFF_LIST.length]],
-    }
-  })
-
-  return schedule
-}
-
-const DATE_STAFF_SCHEDULE = generateStaffSchedule()
+// 운영 날짜 목록
+const OPERATING_DATES = Object.keys(DATE_STAFF_SCHEDULE).sort()
 
 // 날짜별 구역 완료율 동적 생성 (과거 날짜는 100% 완료)
 function generateCompletionRates(): Record<string, Record<string, number>> {
@@ -707,7 +686,7 @@ export default function AdminDashboard() {
           onChange={(e) => setDate(e.target.value)}
           className="px-3 py-2 border rounded-lg text-sm"
         />
-        <span className="text-sm text-gray-500">08:30~08:40 출결</span>
+        <span className="text-sm text-gray-500">08:30~08:50 출결</span>
         <div className="flex gap-1 ml-auto">
           <button
             onClick={() => setSelectedGrade(null)}

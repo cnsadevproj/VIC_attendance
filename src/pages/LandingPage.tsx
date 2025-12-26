@@ -96,7 +96,7 @@ export default function LandingPage() {
           {/* Time info */}
           <div className="bg-blue-50 p-4 rounded-xl mb-5 border border-blue-200">
             <p className="text-center text-blue-800 font-semibold">
-              출결 체크 시간: 08:30 ~ 08:40 (10분)
+              출결 체크 시간: 08:30 ~ 08:50 (20분)
             </p>
           </div>
 
