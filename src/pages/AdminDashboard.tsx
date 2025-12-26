@@ -240,11 +240,10 @@ const ADMIN_PASSWORD = '3028'
 
 export default function AdminDashboard() {
   const navigate = useNavigate()
-  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+  const [isAuthenticated] = useState(() => {
     // 세션 동안 인증 상태 유지
     return sessionStorage.getItem('adminAuth') === 'true'
   })
-  const [isLoading, setIsLoading] = useState(false)
   const [password, setPassword] = useState('')
   const [passwordError, setPasswordError] = useState(false)
   const [date, setDate] = useState(() => {
@@ -441,30 +440,13 @@ export default function AdminDashboard() {
   const handlePasswordSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (password === ADMIN_PASSWORD) {
-      setIsLoading(true)
       sessionStorage.setItem('adminAuth', 'true')
-      setPasswordError(false)
-      // 약간의 딜레이 후 인증 완료 (렌더링 안정화)
-      setTimeout(() => {
-        setIsAuthenticated(true)
-        setIsLoading(false)
-      }, 100)
+      // 페이지 새로고침으로 깔끔하게 대시보드 로드
+      window.location.reload()
     } else {
       setPasswordError(true)
       setPassword('')
     }
-  }
-
-  // 로딩 화면
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">로딩 중...</p>
-        </div>
-      </div>
-    )
   }
 
   // 비밀번호 입력 화면
