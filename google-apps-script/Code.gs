@@ -62,6 +62,8 @@ function doPost(e) {
       if (templateSheet) {
         sheet = templateSheet.copyTo(ss);
         sheet.setName(sheetName);
+        // 숨김 해제 (템플릿이 숨겨져 있어도 새 시트는 보이게)
+        sheet.showSheet();
         // 맨 앞으로 이동
         ss.setActiveSheet(sheet);
         ss.moveActiveSheet(1);
@@ -73,6 +75,8 @@ function doPost(e) {
     } else {
       // 기존 시트가 있으면 데이터 영역만 클리어
       clearDataArea(sheet);
+      // 숨겨져 있으면 보이게
+      sheet.showSheet();
     }
 
     // B2: 날짜 입력
