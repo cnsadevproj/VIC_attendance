@@ -674,6 +674,19 @@ export default function AdminDashboard() {
   const grade1Zones = filteredSummaries.filter((z) => z.grade === 1)
   const grade2Zones = filteredSummaries.filter((z) => z.grade === 2)
 
+  // 학생 특이사항 불러오기
+  const studentNotes = useMemo(() => {
+    try {
+      const notesData = localStorage.getItem(`student_notes_${date}`)
+      if (notesData) {
+        return JSON.parse(notesData) as Record<string, string>
+      }
+    } catch {
+      // 파싱 실패 시 빈 객체
+    }
+    return {}
+  }, [date])
+
   // 결석자 목록 (내보내기용)
   const absentStudentsForExport = useMemo(() => {
     const result: AbsentStudent[] = []
@@ -694,19 +707,29 @@ export default function AdminDashboard() {
             if (student) {
               const record = records.get(seatId)
               if (record?.status === 'absent') {
-                // 비고: 사전결석 사유 또는 기타 메모
-                let note = ''
+                // 비고: 사전결석 사유 + 특이사항 메모
+                const parts: string[] = []
+
+                // 사전결석 사유
                 if (student.preAbsence) {
-                  note = `[사전] ${student.preAbsence.reason}`
+                  parts.push(`[사전] ${student.preAbsence.reason}`)
                 }
+
+                // 학생별 특이사항 (별도 localStorage에서)
+                const studentNote = studentNotes[seatId]
+                if (studentNote) {
+                  parts.push(studentNote)
+                }
+
+                // 출결 기록의 메모
                 if (record.note) {
-                  note = note ? `${note} / ${record.note}` : record.note
+                  parts.push(record.note)
                 }
 
                 result.push({
                   seatId,
                   name: student.name,
-                  note,
+                  note: parts.join(' / '),
                   grade: zone.grade,
                 })
               }
@@ -720,7 +743,7 @@ export default function AdminDashboard() {
     result.sort((a, b) => a.seatId.localeCompare(b.seatId))
 
     return result
-  }, [selectedDateData])
+  }, [selectedDateData, studentNotes])
 
   // 클립보드로 내보내기
   const handleExportToClipboard = async () => {
