@@ -371,14 +371,18 @@ export default function AttendancePage() {
     setHasChanges(true)
   }
 
-  // Calculate summary (미체크 = 배정된 좌석 - 체크된 좌석)
+  // Calculate summary (배정된 학생만 카운트)
   const summary = useMemo(() => {
     let present = 0
     let absent = 0
 
-    attendanceRecords.forEach((record) => {
-      if (record.status === 'present') present++
-      else if (record.status === 'absent') absent++
+    // 배정된 좌석에 대해서만 출결 카운트
+    assignedSeats.forEach((seatId) => {
+      const record = attendanceRecords.get(seatId)
+      if (record) {
+        if (record.status === 'present') present++
+        else if (record.status === 'absent') absent++
+      }
     })
 
     const unchecked = assignedSeats.length - present - absent

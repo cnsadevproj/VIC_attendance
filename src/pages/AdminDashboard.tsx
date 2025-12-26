@@ -190,30 +190,11 @@ function generateSampleDataForDate(dateStr: string): Map<string, Map<string, Att
   return allData
 }
 
-// 모든 날짜에 대한 샘플 데이터 생성
+// 모든 날짜에 대한 샘플 데이터 생성 (과거 날짜 조회용, localStorage에 저장하지 않음)
 const ALL_SAMPLE_DATA: Record<string, Map<string, Map<string, AttendanceRecord>>> = {}
 Object.keys(DATE_COMPLETION_RATES).forEach(dateStr => {
   ALL_SAMPLE_DATA[dateStr] = generateSampleDataForDate(dateStr)
 })
-
-// 오늘 날짜 데이터를 localStorage에 저장 (출결 입력 화면에서 볼 수 있도록)
-const todayKeyInit = new Date().toISOString().split('T')[0]
-const todaySampleData = ALL_SAMPLE_DATA[todayKeyInit]
-if (todaySampleData) {
-  const todayCompletionRates = DATE_COMPLETION_RATES[todayKeyInit] || {}
-  todaySampleData.forEach((records, zoneId) => {
-    if (records.size > 0) {
-      const dataToSave = Array.from(records.entries())
-      const rate = todayCompletionRates[zoneId] || 0
-      if (rate >= 1.0) {
-        localStorage.setItem(`attendance_saved_${zoneId}_${todayKeyInit}`, JSON.stringify(dataToSave))
-        localStorage.setItem(`attendance_saved_time_${zoneId}_${todayKeyInit}`, new Date().toISOString())
-      } else if (rate > 0) {
-        localStorage.setItem(`attendance_temp_${zoneId}_${todayKeyInit}`, JSON.stringify(dataToSave))
-      }
-    }
-  })
-}
 
 // 임시저장 구역 판별 함수
 function getTempSaveZonesForDate(dateStr: string): string[] {
