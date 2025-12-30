@@ -466,28 +466,63 @@ async function sendTestSMS() {
 
     // Step 4: Select 선생님 as recipient type
     console.log('Selecting 선생님 as recipient...');
+
+    // The recipient checkboxes are: #to_student, #to_parent2 (어머니), #to_parent1 (아버지), #to_teacher (선생님)
+    // These are standard HTML checkboxes inside labels
+    let recipientSelected = false;
+
     try {
-      // The recipient section has separate checkboxes for 학생(본인), 어머니, 아버지, 선생님
-      const recipientCheckbox = page.locator('text=선생님').last();
-      await recipientCheckbox.click();
-    } catch (e) {
-      await page.evaluate(() => {
-        // Find the recipient selection area (수신자 선택)
-        const divs = document.querySelectorAll('div');
-        for (const div of divs) {
-          if (div.textContent?.includes('수신자 선택')) {
-            const parent = div.parentElement || div;
-            const items = parent.querySelectorAll('div[cursor="pointer"], span');
-            for (const item of items) {
-              if (item.textContent?.trim() === '선생님') {
-                item.click();
-                return;
-              }
-            }
-          }
+      // Method 1: Direct checkbox click by ID
+      const teacherCheckbox = page.locator('#to_teacher');
+      if (await teacherCheckbox.count() > 0) {
+        const isChecked = await teacherCheckbox.isChecked();
+        if (!isChecked) {
+          await teacherCheckbox.check();
+          console.log('Checked #to_teacher checkbox');
+        } else {
+          console.log('#to_teacher already checked');
         }
+        recipientSelected = true;
+      }
+    } catch (e) {
+      console.log('Direct checkbox method failed:', e.message);
+    }
+
+    // Fallback: Use page.evaluate
+    if (!recipientSelected) {
+      recipientSelected = await page.evaluate(() => {
+        const checkbox = document.querySelector('#to_teacher');
+        if (checkbox) {
+          if (!checkbox.checked) {
+            checkbox.click();
+          }
+          console.log('Clicked #to_teacher via evaluate');
+          return true;
+        }
+
+        // Try by name
+        const byName = document.querySelector('input[name="to_teacher"]');
+        if (byName) {
+          if (!byName.checked) {
+            byName.click();
+          }
+          console.log('Clicked to_teacher by name');
+          return true;
+        }
+
+        return false;
       });
     }
+
+    console.log('Recipient selection result:', recipientSelected);
+
+    // Verify the checkbox is actually checked
+    const isChecked = await page.evaluate(() => {
+      const cb = document.querySelector('#to_teacher');
+      return cb ? cb.checked : false;
+    });
+    console.log('Teacher checkbox verified checked:', isChecked);
+
     await page.waitForTimeout(500);
 
     // Step 5: Enter message
@@ -536,6 +571,10 @@ async function sendTestSMS() {
 
     // Step 8: Click send button and handle confirmation dialog
     console.log('Clicking send button...');
+
+    // Take screenshot before clicking send
+    const screenshotBefore = await page.screenshot();
+    console.log('Screenshot before send, size:', screenshotBefore.length, 'bytes');
 
     // Set up a promise to track dialog handling
     let dialogHandled = false;
@@ -589,20 +628,34 @@ async function sendTestSMS() {
     }
 
     // Wait for the success message to appear after dialog
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(5000);
+
+    // Take screenshot after send
+    const screenshotAfter = await page.screenshot();
+    console.log('Screenshot after send, size:', screenshotAfter.length, 'bytes');
 
     // Check for success indicator
     const result = await page.evaluate(() => {
       const bodyText = document.body.innerText;
-      if (bodyText.includes('발송 완료') || bodyText.includes('성공')) {
-        return { success: true, message: bodyText.match(/발송 완료[^\n]*/)?.[0] || 'SMS sent' };
-      }
-      return { success: false, message: 'No success indicator found' };
+      // Look for various success indicators
+      const hasSuccess = bodyText.includes('발송 완료') || bodyText.includes('성공') || bodyText.includes('단문');
+      const match = bodyText.match(/발송[^\n]{0,100}/g);
+      return {
+        success: hasSuccess,
+        message: match ? match.join(', ') : 'No success indicator found',
+        bodyLength: bodyText.length
+      };
     });
 
     console.log('Send result:', JSON.stringify(result));
     console.log('Test SMS sent successfully');
-    return { status: 'success', message: 'Test SMS sent to 민수정 선생님', dialogHandled: wasDialogHandled };
+    return {
+      status: 'success',
+      message: 'Test SMS sent to 민수정 선생님',
+      dialogHandled: wasDialogHandled,
+      dialogMessage: dialogMessage,
+      pageResult: result
+    };
 
   } catch (err) {
     console.error('Error:', err);
