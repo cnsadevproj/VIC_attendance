@@ -11,7 +11,11 @@ const PORT = process.env.PORT || 8080;
 
 // Riroschool credentials from environment
 const CNSA_ID = process.env.CNSA_ID;
-const CNSA_PW = process.env.CNSA_PW;
+// Remove any backslash escaping that may have been added during env var setting
+const CNSA_PW = process.env.CNSA_PW?.replace(/\\!/g, '!');
+
+console.log('CNSA_ID loaded:', CNSA_ID);
+console.log('CNSA_PW length:', CNSA_PW?.length);
 
 // Production start date: 2026년 1월 7일
 const PRODUCTION_START_DATE = new Date('2026-01-07T00:00:00+09:00');
@@ -31,11 +35,11 @@ function parseStudentId(studentId) {
 }
 
 // SMS message template
-const SMS_MESSAGE = `안녕하세요. 충남삼성고등학교입니다.
+const SMS_MESSAGE = `안녕하세요, 충남삼성고등학교입니다.
 
 본 메시지는 금일 08:30 면학실 출석 확인이 되지 않은 학생을 대상으로 자동 발송됩니다.
-면학실 출석 확인은 08:30부터 면학실에서 진행되오니,
-해당 학생은 출석 확인 후 방과후 교실로 이동해 주시기 바랍니다.
+출석 확인은 08:30부터 면학실에서 진행되오니,
+반드시 출석 체크를 완료한 후 방과후 교실로 이동해 주시기 바랍니다.
 
 원활한 운영을 위해 협조 부탁드립니다.
 감사합니다.
@@ -467,69 +471,154 @@ async function sendTestSMS() {
     // Step 4: Select 선생님 as recipient type
     console.log('Selecting 선생님 as recipient...');
 
-    // The recipient checkboxes are: #to_student, #to_parent2 (어머니), #to_parent1 (아버지), #to_teacher (선생님)
-    // These are standard HTML checkboxes inside labels
+    // First, let's debug what recipient checkboxes exist on the page
+    const recipientDebug = await page.evaluate(() => {
+      // Find the recipient type area
+      const recipTypeDiv = document.querySelector('.recip_type');
+      const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+      const recipientCheckboxes = [];
+
+      for (const cb of checkboxes) {
+        if (cb.id?.startsWith('to_') || cb.name?.startsWith('to_')) {
+          recipientCheckboxes.push({
+            id: cb.id,
+            name: cb.name,
+            checked: cb.checked,
+            visible: cb.offsetParent !== null,
+            parentTag: cb.parentElement?.tagName,
+            grandparentClass: cb.parentElement?.parentElement?.className
+          });
+        }
+      }
+
+      return {
+        hasRecipTypeDiv: !!recipTypeDiv,
+        recipientCheckboxes: recipientCheckboxes,
+        totalCheckboxes: checkboxes.length
+      };
+    });
+    console.log('Recipient debug info:', JSON.stringify(recipientDebug));
+
+    // The recipient checkboxes structure:
+    // <label class="check">
+    //   <input type="checkbox" id="to_teacher">
+    //   <span class="ico1"></span>
+    //   <span class="txt">선생님</span>
+    // </label>
     let recipientSelected = false;
 
+    // Method 1: Click on the "선생님" span inside the recipient area (not the address book one)
     try {
-      // Method 1: Direct checkbox click by ID
-      const teacherCheckbox = page.locator('#to_teacher');
-      if (await teacherCheckbox.count() > 0) {
-        const isChecked = await teacherCheckbox.isChecked();
-        if (!isChecked) {
-          await teacherCheckbox.check();
-          console.log('Checked #to_teacher checkbox');
-        } else {
-          console.log('#to_teacher already checked');
+      // The recipient area has class "recip_type" - find the 선생님 text within that specific area
+      const result = await page.evaluate(() => {
+        // Find the recipient type container
+        const recipTypeDiv = document.querySelector('.recip_type');
+        if (!recipTypeDiv) {
+          console.log('recip_type div not found');
+          return { found: false, error: 'recip_type not found' };
         }
-        recipientSelected = true;
-      }
-    } catch (e) {
-      console.log('Direct checkbox method failed:', e.message);
-    }
 
-    // Fallback: Use page.evaluate
-    if (!recipientSelected) {
-      recipientSelected = await page.evaluate(() => {
-        const checkbox = document.querySelector('#to_teacher');
-        if (checkbox) {
-          if (!checkbox.checked) {
-            checkbox.click();
+        // Find the label that contains "선생님" text within this container
+        const labels = recipTypeDiv.querySelectorAll('label.check');
+        for (const label of labels) {
+          const txtSpan = label.querySelector('span.txt');
+          if (txtSpan && txtSpan.textContent?.includes('선생님')) {
+            // Found the correct label - click it
+            label.click();
+            console.log('Clicked label with 선생님');
+
+            // Also directly check the checkbox
+            const checkbox = label.querySelector('input[type="checkbox"]');
+            if (checkbox) {
+              checkbox.checked = true;
+              checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+              return { found: true, checkboxId: checkbox.id, checked: checkbox.checked };
+            }
+            return { found: true, labelClicked: true };
           }
-          console.log('Clicked #to_teacher via evaluate');
-          return true;
         }
 
-        // Try by name
-        const byName = document.querySelector('input[name="to_teacher"]');
-        if (byName) {
-          if (!byName.checked) {
-            byName.click();
-          }
-          console.log('Clicked to_teacher by name');
-          return true;
+        // Fallback: Try to find by ID directly within recip_type
+        const teacherCb = recipTypeDiv.querySelector('#to_teacher');
+        if (teacherCb) {
+          teacherCb.checked = true;
+          teacherCb.click();
+          teacherCb.dispatchEvent(new Event('change', { bubbles: true }));
+          return { found: true, checkboxId: 'to_teacher', checked: teacherCb.checked };
         }
 
-        return false;
+        return { found: false, error: 'Teacher checkbox not found in recip_type' };
       });
+
+      console.log('Recipient selection result:', JSON.stringify(result));
+      recipientSelected = result.found;
+    } catch (e) {
+      console.log('Page evaluate method failed:', e.message);
     }
 
-    console.log('Recipient selection result:', recipientSelected);
+    // Method 2: If still not selected, try clicking via Playwright with specific selector
+    if (!recipientSelected) {
+      try {
+        // Try clicking the span with "선생님" text inside recip_type div
+        await page.locator('.recip_type span.txt:has-text("선생님")').click({ force: true });
+        console.log('Clicked .recip_type span.txt with 선생님');
+        recipientSelected = true;
+      } catch (e) {
+        console.log('Span click method failed:', e.message);
+      }
+    }
 
-    // Verify the checkbox is actually checked
-    const isChecked = await page.evaluate(() => {
+    // Method 3: Try clicking label.check inside recip_type
+    if (!recipientSelected) {
+      try {
+        const labels = page.locator('.recip_type label.check');
+        const count = await labels.count();
+        console.log('Found', count, 'labels in recip_type');
+
+        for (let i = 0; i < count; i++) {
+          const label = labels.nth(i);
+          const text = await label.textContent();
+          if (text?.includes('선생님')) {
+            await label.click({ force: true });
+            console.log('Clicked label with text:', text);
+            recipientSelected = true;
+            break;
+          }
+        }
+      } catch (e) {
+        console.log('Label iteration method failed:', e.message);
+      }
+    }
+
+    // Final verification
+    const finalCheckState = await page.evaluate(() => {
       const cb = document.querySelector('#to_teacher');
-      return cb ? cb.checked : false;
+      const cbInRecipType = document.querySelector('.recip_type #to_teacher');
+      return {
+        global: cb ? cb.checked : 'not found',
+        inRecipType: cbInRecipType ? cbInRecipType.checked : 'not found in recip_type'
+      };
     });
-    console.log('Teacher checkbox verified checked:', isChecked);
+    console.log('Final teacher checkbox state:', JSON.stringify(finalCheckState));
 
     await page.waitForTimeout(500);
 
-    // Step 5: Enter message
+    // Step 5: Enter title and message
+    console.log('Entering title...');
+    await page.evaluate((title) => {
+      const titleInput = document.querySelector('input[name="btitle"]');
+      if (titleInput) {
+        titleInput.value = title;
+        titleInput.dispatchEvent(new Event('input', { bubbles: true }));
+        console.log('Title entered:', title);
+      }
+    }, SMS_TITLE);
+    await page.waitForTimeout(300);
+
     console.log('Entering message...');
     const messageBox = page.getByRole('textbox', { name: /메시지를 입력/ });
     if (await messageBox.count() > 0) {
-      await messageBox.fill(TEST_MESSAGE);
+      await messageBox.fill(SMS_MESSAGE);
     } else {
       await page.evaluate((msg) => {
         const textarea = document.querySelector('textarea');
@@ -537,36 +626,88 @@ async function sendTestSMS() {
           textarea.value = msg;
           textarea.dispatchEvent(new Event('input', { bubbles: true }));
         }
-      }, TEST_MESSAGE);
+      }, SMS_MESSAGE);
     }
     await page.waitForTimeout(500);
 
-    // Step 6: Make sure 모두 문자 is selected (should be default)
-    console.log('Ensuring 모두 문자 is selected...');
-    try {
-      const allSmsRadio = page.getByRole('radio', { name: '모두 문자' });
-      if (await allSmsRadio.count() > 0 && !(await allSmsRadio.isChecked())) {
-        await allSmsRadio.click();
+    // Step 6: Select SMS type - ensure "모두 문자" (SMS to all) is selected, not app
+    console.log('Selecting SMS type (모두 문자)...');
+
+    // Debug: Check what SMS type options exist
+    const smsTypeInfo = await page.evaluate(() => {
+      const radios = document.querySelectorAll('input[type="radio"][name="sms_chk"]');
+      return Array.from(radios).map(r => ({
+        id: r.id,
+        value: r.value,
+        checked: r.checked,
+        label: r.parentElement?.textContent?.trim()
+      }));
+    });
+    console.log('SMS type options:', JSON.stringify(smsTypeInfo));
+
+    // Select "모두 문자" option
+    await page.evaluate(() => {
+      // Look for radio buttons with different values
+      const radios = document.querySelectorAll('input[type="radio"][name="sms_chk"]');
+      for (const radio of radios) {
+        const label = radio.parentElement?.textContent?.trim() || '';
+        // Select "모두 문자" which sends SMS to all recipients
+        if (label.includes('모두 문자') || radio.value === 'allsms' || radio.id === 'allsms') {
+          radio.checked = true;
+          radio.click();
+          radio.dispatchEvent(new Event('change', { bubbles: true }));
+          console.log('Selected SMS type:', label);
+          return true;
+        }
       }
-    } catch (e) {
-      // Already selected or not needed
-    }
+      // Fallback: try to find and click the specific radio
+      const allSmsRadio = document.querySelector('#allsms');
+      if (allSmsRadio) {
+        allSmsRadio.checked = true;
+        allSmsRadio.click();
+        console.log('Selected #allsms');
+        return true;
+      }
+      return false;
+    });
     await page.waitForTimeout(500);
 
     // Step 7: Enter password for sending
     console.log('Entering password...');
-    const pwInput = page.getByRole('textbox', { name: '로그인 비밀번호 입력' });
-    if (await pwInput.count() > 0) {
-      await pwInput.fill(CNSA_PW);
-    } else {
-      await page.evaluate((pw) => {
-        const input = document.querySelector('input[type="password"], input[placeholder*="비밀번호"]');
-        if (input) {
-          input.value = pw;
-          input.dispatchEvent(new Event('input', { bubbles: true }));
+    console.log('Password to enter length:', CNSA_PW?.length);
+
+    // Use page.evaluate to directly set the value - avoids any character escaping
+    await page.evaluate((pw) => {
+      const input = document.querySelector('input[name="admin_pass"]');
+      if (input) {
+        // Clear existing value
+        input.value = '';
+        // Set the new value directly
+        input.value = pw;
+        // Dispatch events to ensure form recognizes the change
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        console.log('Password set via evaluate, length:', pw.length);
+      } else {
+        console.log('Password input not found by name');
+        // Try alternative selector
+        const altInput = document.querySelector('input[type="password"]');
+        if (altInput) {
+          altInput.value = pw;
+          altInput.dispatchEvent(new Event('input', { bubbles: true }));
+          altInput.dispatchEvent(new Event('change', { bubbles: true }));
+          console.log('Password set via type="password" selector');
         }
-      }, CNSA_PW);
-    }
+      }
+    }, CNSA_PW);
+    console.log('Password entered via evaluate');
+
+    // Verify password was entered correctly
+    const enteredPw = await page.evaluate(() => {
+      const input = document.querySelector('input[name="admin_pass"]');
+      return input ? { value: input.value, length: input.value.length } : 'not found';
+    });
+    console.log('Password verification:', JSON.stringify(enteredPw));
     await page.waitForTimeout(500);
 
     // Step 8: Click send button and handle confirmation dialog
@@ -576,29 +717,110 @@ async function sendTestSMS() {
     const screenshotBefore = await page.screenshot();
     console.log('Screenshot before send, size:', screenshotBefore.length, 'bytes');
 
-    // Set up a promise to track dialog handling
-    let dialogHandled = false;
-    let dialogMessage = '';
+    // Set up network request logging to see what happens when we submit
+    const networkRequests = [];
+    const responseBodyPromises = [];
 
+    page.on('request', (request) => {
+      if (request.url().includes('sms') || request.method() === 'POST') {
+        const postData = request.postData();
+        networkRequests.push({
+          url: request.url(),
+          method: request.method(),
+          postData: postData?.substring(0, 2000), // Increased limit
+          hasToTeacher: postData?.includes('to_teacher'),
+          hasMessage: postData?.includes('이 메시지는')
+        });
+        console.log('Network request:', request.method(), request.url());
+        console.log('POST data preview:', postData?.substring(0, 500));
+      }
+    });
+
+    let apiResponse = null;
+    page.on('response', async (response) => {
+      if (response.url().includes('sms') && response.request().method() === 'POST') {
+        console.log('Network response:', response.status(), response.url());
+        try {
+          const responseText = await response.text();
+          console.log('Response body (full):', responseText);
+
+          // Try to parse as JSON
+          try {
+            const jsonResponse = JSON.parse(responseText);
+            apiResponse = jsonResponse;
+            console.log('Parsed JSON response:', JSON.stringify(jsonResponse));
+            if (jsonResponse.code) {
+              console.log('Response code:', jsonResponse.code);
+            }
+            if (jsonResponse.msg) {
+              console.log('Response message:', jsonResponse.msg);
+            }
+          } catch (parseError) {
+            // Not JSON, check for HTML/text indicators
+            if (responseText.includes('성공') || responseText.includes('발송 완료')) {
+              console.log('SUCCESS indicator found in response');
+            }
+            if (responseText.includes('실패') || responseText.includes('오류')) {
+              console.log('ERROR indicator found in response');
+            }
+          }
+        } catch (e) {
+          console.log('Could not read response body:', e.message);
+        }
+      }
+    });
+
+    // Set up dialog handling - handle multiple dialogs (MMS confirmation + send confirmation)
+    let dialogCount = 0;
+    let dialogMessages = [];
+
+    // Handle all dialogs that appear (accept them all)
+    page.on('dialog', async (dialog) => {
+      dialogCount++;
+      const msg = dialog.message();
+      dialogMessages.push(msg);
+      console.log(`Dialog #${dialogCount} appeared:`, msg);
+      await dialog.accept();
+      console.log(`Dialog #${dialogCount} accepted`);
+    });
+
+    // Create a promise that waits for the first dialog
     const dialogPromise = new Promise((resolve) => {
-      const handler = async (dialog) => {
-        dialogMessage = dialog.message();
-        console.log('Dialog appeared:', dialogMessage);
-        await dialog.accept();
-        dialogHandled = true;
-        console.log('Dialog accepted');
-        resolve(true);
+      const checkDialog = () => {
+        if (dialogCount > 0) {
+          resolve(true);
+        }
       };
-      page.once('dialog', handler);
+      // Check every 500ms
+      const interval = setInterval(checkDialog, 500);
 
-      // Timeout fallback - if no dialog appears within 10 seconds
+      // Timeout fallback - if no dialog appears within 15 seconds
       setTimeout(() => {
-        if (!dialogHandled) {
+        clearInterval(interval);
+        if (dialogCount === 0) {
           console.log('No dialog appeared within timeout');
           resolve(false);
+        } else {
+          resolve(true);
         }
-      }, 10000);
+      }, 15000);
     });
+
+    let dialogMessage = '';
+
+    // Debug: Check what the send button does when clicked
+    const buttonInfo = await page.evaluate(() => {
+      const btn = document.querySelector('button');
+      const sendBtn = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"]'))
+        .find(b => b.textContent?.includes('발송') || b.value?.includes('발송'));
+      return sendBtn ? {
+        tagName: sendBtn.tagName,
+        type: sendBtn.type,
+        onclick: sendBtn.onclick?.toString()?.substring(0, 200),
+        form: sendBtn.form?.id || sendBtn.form?.action
+      } : null;
+    });
+    console.log('Send button info:', JSON.stringify(buttonInfo));
 
     // Click the send button
     try {
@@ -621,39 +843,95 @@ async function sendTestSMS() {
     console.log('Waiting for confirmation dialog...');
     const wasDialogHandled = await dialogPromise;
 
+    // Log any network requests made
+    console.log('Network requests summary:', networkRequests.map(r => ({
+      url: r.url,
+      method: r.method,
+      hasToTeacher: r.hasToTeacher,
+      hasMessage: r.hasMessage
+    })));
+
     if (wasDialogHandled) {
-      console.log('Confirmation dialog was handled successfully');
+      console.log('Dialogs handled:', dialogCount, 'messages:', dialogMessages);
+      dialogMessage = dialogMessages.join(' | ');
     } else {
       console.log('Warning: No confirmation dialog detected');
     }
 
-    // Wait for the success message to appear after dialog
+    // Wait for all dialogs and form submission to complete
+    console.log('Waiting for form submission and additional dialogs...');
     await page.waitForTimeout(5000);
+
+    // Log final dialog count
+    console.log('Final dialog count:', dialogCount);
+    console.log('All dialog messages:', dialogMessages);
+
+    // Log network requests again after waiting
+    console.log('All network requests:', JSON.stringify(networkRequests));
+
+    // Check if page URL changed (might redirect after successful send)
+    const urlAfterSend = page.url();
+    console.log('URL after send:', urlAfterSend);
+
+    // Wait for the success message to appear after dialog
+    await page.waitForTimeout(3000);
+
+    // Check for any second confirmation dialog or result messages
+    let secondDialogMessage = '';
+    const secondDialogPromise = new Promise((resolve) => {
+      const handler = async (dialog) => {
+        secondDialogMessage = dialog.message();
+        console.log('Second dialog appeared:', secondDialogMessage);
+        await dialog.accept();
+        console.log('Second dialog accepted');
+        resolve(true);
+      };
+      page.once('dialog', handler);
+      setTimeout(() => resolve(false), 3000);
+    });
+
+    const hadSecondDialog = await secondDialogPromise;
+    console.log('Had second dialog:', hadSecondDialog);
+
+    // Wait a bit more for the page to update
+    await page.waitForTimeout(2000);
 
     // Take screenshot after send
     const screenshotAfter = await page.screenshot();
     console.log('Screenshot after send, size:', screenshotAfter.length, 'bytes');
 
-    // Check for success indicator
+    // Check for success indicator - more comprehensive check
     const result = await page.evaluate(() => {
       const bodyText = document.body.innerText;
       // Look for various success indicators
-      const hasSuccess = bodyText.includes('발송 완료') || bodyText.includes('성공') || bodyText.includes('단문');
+      const hasSuccess = bodyText.includes('발송 완료') || bodyText.includes('성공') || bodyText.includes('발송되었습니다');
+      const hasError = bodyText.includes('실패') || bodyText.includes('오류') || bodyText.includes('에러');
       const match = bodyText.match(/발송[^\n]{0,100}/g);
+
+      // Also check for any visible alerts or error messages
+      const alerts = Array.from(document.querySelectorAll('.alert, .error, .message, .result'))
+        .map(el => el.textContent?.substring(0, 100));
+
       return {
         success: hasSuccess,
+        hasError: hasError,
         message: match ? match.join(', ') : 'No success indicator found',
-        bodyLength: bodyText.length
+        bodyLength: bodyText.length,
+        alerts: alerts,
+        currentUrl: window.location.href
       };
     });
 
     console.log('Send result:', JSON.stringify(result));
-    console.log('Test SMS sent successfully');
+    console.log('Test SMS completed');
+    console.log('API response was:', JSON.stringify(apiResponse));
     return {
-      status: 'success',
+      status: apiResponse?.code === 0 ? 'success' : (result.hasError ? 'error' : 'unknown'),
       message: 'Test SMS sent to 민수정 선생님',
       dialogHandled: wasDialogHandled,
       dialogMessage: dialogMessage,
+      secondDialog: hadSecondDialog ? secondDialogMessage : null,
+      apiResponse: apiResponse,
       pageResult: result
     };
 

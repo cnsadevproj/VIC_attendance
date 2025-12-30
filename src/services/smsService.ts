@@ -1,5 +1,5 @@
 // SMS 발송 서비스
-const SMS_API_URL = 'https://vic-sms-server-j2z537ws5a-du.a.run.app'
+const SMS_API_URL = 'https://vic-sms-server-236744560712.asia-northeast3.run.app'
 
 export interface SmsStudent {
   studentId: string
