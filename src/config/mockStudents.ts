@@ -3,6 +3,7 @@
 // 2학년: 146명 (3층 3A, 3B, 3C, 3D)
 
 import { SEAT_LAYOUTS } from './seatLayouts'
+import { PRE_ABSENCES } from './preAbsences'
 
 export interface Student {
   studentId: string  // 5자리 학번
@@ -360,10 +361,12 @@ function assignStudentsToSeats(): Map<string, Student | null> {
     seatIds.forEach((seatId) => {
       if (zoneStudentCount < studentsForZone && grade1StudentIndex < GRADE1_STUDENTS.length) {
         const studentData = GRADE1_STUDENTS[grade1StudentIndex]
+        const preAbsence = PRE_ABSENCES[studentData.studentId]
         studentMap.set(seatId, {
           studentId: studentData.studentId,
           name: studentData.name,
           seatId,
+          ...(preAbsence && { preAbsence }),
         })
         grade1StudentIndex++
         zoneStudentCount++
@@ -387,10 +390,12 @@ function assignStudentsToSeats(): Map<string, Student | null> {
     seatIds.forEach((seatId) => {
       if (zoneStudentCount < studentsForZone && grade2StudentIndex < GRADE2_STUDENTS.length) {
         const studentData = GRADE2_STUDENTS[grade2StudentIndex]
+        const preAbsence = PRE_ABSENCES[studentData.studentId]
         studentMap.set(seatId, {
           studentId: studentData.studentId,
           name: studentData.name,
           seatId,
+          ...(preAbsence && { preAbsence }),
         })
         grade2StudentIndex++
         zoneStudentCount++

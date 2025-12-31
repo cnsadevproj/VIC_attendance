@@ -3,11 +3,13 @@ import Seat from './Seat'
 import type { AttendanceRecord } from '../../types'
 import { SEAT_LAYOUTS } from '../../config/seatLayouts'
 import { getStudentBySeatId } from '../../config/mockStudents'
+import { isPreAbsentOnDate } from '../../config/preAbsences'
 
 interface SeatMapProps {
   zoneId: string
   attendanceRecords: Map<string, AttendanceRecord>
   studentNotes?: Record<string, string>  // 학생별 특이사항
+  dateKey?: string  // 현재 날짜 (YYYY-MM-DD)
   onSeatClick: (seatId: string) => void
   onSeatLongPress?: (seatId: string) => void
 }
@@ -16,9 +18,12 @@ export default function SeatMap({
   zoneId,
   attendanceRecords,
   studentNotes = {},
+  dateKey,
   onSeatClick,
   onSeatLongPress,
 }: SeatMapProps) {
+  // 현재 날짜 (dateKey가 없으면 오늘 날짜)
+  const currentDate = dateKey || new Date().toISOString().split('T')[0]
   const layout = useMemo(() => {
     return SEAT_LAYOUTS[zoneId] || []
   }, [zoneId])
@@ -61,7 +66,8 @@ export default function SeatMap({
                 // Use seatId for record lookup
                 const record = attendanceRecords.get(seatId)
                 const hasNote = !!studentNotes[seatId]
-                const hasPreAbsence = !!student?.preAbsence
+                // 현재 날짜에 사전결석인지 확인
+                const hasPreAbsence = student ? isPreAbsentOnDate(student.studentId, currentDate) : false
 
                 return (
                   <Seat

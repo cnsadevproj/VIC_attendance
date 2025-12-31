@@ -6,6 +6,7 @@ import PinchZoomContainer from '../components/PinchZoomContainer'
 import type { AttendanceRecord, CurrentStaff } from '../types'
 import { SEAT_LAYOUTS } from '../config/seatLayouts'
 import { getStudentBySeatId } from '../config/mockStudents'
+import { isPreAbsentOnDate, getPreAbsenceInfo } from '../config/preAbsences'
 
 interface StudentModalData {
   studentName: string
@@ -180,7 +181,8 @@ export default function AttendancePage() {
     const preAbsenceRecords = new Map<string, AttendanceRecord>()
     assignedSeats.forEach((seatId) => {
       const student = getStudentBySeatId(seatId)
-      if (student?.preAbsence) {
+      // 오늘 날짜에 사전결석인 학생만 자동 결석 처리
+      if (student && isPreAbsentOnDate(student.studentId, todayKey)) {
         preAbsenceRecords.set(seatId, {
           studentId: seatId,
           status: 'absent',
@@ -243,11 +245,15 @@ export default function AttendancePage() {
     const student = getStudentBySeatId(seatId)
     if (student) {
       const note = getStudentNote(seatId, dateKey)
+      // 현재 날짜에 사전결석인 경우에만 사유 표시
+      const preAbsenceInfo = isPreAbsentOnDate(student.studentId, dateKey)
+        ? getPreAbsenceInfo(student.studentId)
+        : null
       setStudentModal({
         studentName: student.name,
         studentId: student.studentId,
         seatId: seatId,
-        preAbsenceReason: student.preAbsence?.reason,
+        preAbsenceReason: preAbsenceInfo?.reason,
         note: note,
       })
       setNoteInput(note)
@@ -502,6 +508,7 @@ export default function AttendancePage() {
             zoneId={zoneId || ''}
             attendanceRecords={attendanceRecords}
             studentNotes={studentNotes}
+            dateKey={dateKey}
             onSeatClick={handleSeatClick}
             onSeatLongPress={handleSeatLongPress}
           />
