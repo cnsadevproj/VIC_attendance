@@ -20,16 +20,24 @@ function normalizeDate(dateStr: string): string {
     return dateStr
   }
 
+  // "Wed Jan 07 2026 00:00:00 GMT+0900 (한국 표준시)" 형식 처리
+  // 한글 괄호 부분 제거 후 파싱
+  const cleanedDateStr = dateStr.replace(/\s*\([^)]*\)\s*$/, '')
+
   // Date 객체로 파싱 후 YYYY-MM-DD로 변환
   try {
-    const date = new Date(dateStr)
-    if (isNaN(date.getTime())) return ''
+    const date = new Date(cleanedDateStr)
+    if (isNaN(date.getTime())) {
+      console.error('[normalizeDate] Failed to parse:', dateStr)
+      return ''
+    }
 
     const year = date.getFullYear()
     const month = String(date.getMonth() + 1).padStart(2, '0')
     const day = String(date.getDate()).padStart(2, '0')
     return `${year}-${month}-${day}`
-  } catch {
+  } catch (e) {
+    console.error('[normalizeDate] Error:', e, dateStr)
     return ''
   }
 }
