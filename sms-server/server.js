@@ -1257,6 +1257,211 @@ app.post('/api/send-absent-sms', async (req, res) => {
   }
 });
 
+// Discord webhook for reporting
+const DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1414838907299692626/JFA44m5Pf_iw3BILrS1rgY9vs0Mg_ajZDrMODKtScpjqmyz3znEFxr7hXbOPoKYGilig';
+
+// Google Spreadsheet URL
+const SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/1gVFE9dxJ-tl6f4KFqe5z2XDZ2B5mVgzpFAj7s-XrLAs/edit';
+
+// Capture Google Sheet screenshot
+async function captureSheetScreenshot(sheetName) {
+  const browser = await chromium.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
+  });
+
+  try {
+    const context = await browser.newContext({
+      viewport: { width: 1400, height: 900 }
+    });
+    const page = await context.newPage();
+
+    // Navigate to the specific sheet
+    const sheetUrl = `${SPREADSHEET_URL}#gid=0`;
+    console.log('Opening spreadsheet:', sheetUrl);
+
+    await page.goto(sheetUrl, { waitUntil: 'networkidle', timeout: 60000 });
+    await page.waitForTimeout(3000);
+
+    // Try to find and click the specific sheet tab
+    try {
+      const sheetTab = page.locator(`text=${sheetName}`).first();
+      if (await sheetTab.isVisible()) {
+        await sheetTab.click();
+        console.log(`Clicked on sheet tab: ${sheetName}`);
+        await page.waitForTimeout(2000);
+      }
+    } catch (e) {
+      console.log('Could not click sheet tab:', e.message);
+    }
+
+    // Hide unnecessary UI elements for cleaner screenshot
+    await page.evaluate(() => {
+      // Hide toolbar and other UI elements
+      const elementsToHide = [
+        '#docs-toolbar-wrapper',
+        '#docs-chrome',
+        '.docs-sheet-tab-bar',
+        '#docs-editor-container > div:first-child'
+      ];
+      elementsToHide.forEach(selector => {
+        const el = document.querySelector(selector);
+        if (el) el.style.display = 'none';
+      });
+    });
+
+    // Take screenshot of the sheet area
+    const screenshot = await page.screenshot({
+      type: 'png',
+      clip: {
+        x: 0,
+        y: 0,
+        width: 1200,
+        height: 600
+      }
+    });
+
+    console.log('Screenshot captured, size:', screenshot.length, 'bytes');
+    return screenshot;
+
+  } finally {
+    await browser.close();
+  }
+}
+
+// Send message and image to Discord with embed
+async function sendToDiscord(message, imageBuffer, embedData = null) {
+  const FormData = require('form-data');
+  const fetch = require('node-fetch');
+
+  const formData = new FormData();
+
+  // 임베드와 버튼이 있는 payload
+  const payload = {
+    content: message
+  };
+
+  // 임베드 추가 (있는 경우)
+  if (embedData) {
+    payload.embeds = [{
+      title: embedData.title || '📋 면학 출결 현황',
+      description: embedData.description,
+      color: 0x5865F2, // Discord 블루
+      fields: embedData.fields || [],
+      timestamp: new Date().toISOString(),
+      footer: {
+        text: 'VIC 출결관리 시스템'
+      }
+    }];
+
+    // 링크 버튼 추가
+    payload.components = [{
+      type: 1, // Action Row
+      components: [{
+        type: 2, // Button
+        style: 5, // Link
+        label: '📊 스프레드시트 열기',
+        url: SPREADSHEET_URL
+      }]
+    }];
+  }
+
+  formData.append('payload_json', JSON.stringify(payload));
+
+  if (imageBuffer) {
+    formData.append('file', imageBuffer, {
+      filename: 'attendance_report.png',
+      contentType: 'image/png'
+    });
+  }
+
+  const response = await fetch(DISCORD_WEBHOOK_URL, {
+    method: 'POST',
+    body: formData
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Discord webhook failed: ${response.status} - ${errorText}`);
+  }
+
+  return { success: true };
+}
+
+// Discord report endpoint
+app.post('/api/send-discord-report', async (req, res) => {
+  const { date, sheetName, grade1Count, grade2Count, message } = req.body;
+
+  if (!date || !sheetName) {
+    return res.status(400).json({
+      error: 'date and sheetName are required',
+      example: { date: '2026-01-07', sheetName: '260107', grade1Count: 3, grade2Count: 2 }
+    });
+  }
+
+  try {
+    console.log(`Capturing sheet ${sheetName} and sending to Discord...`);
+
+    // Capture screenshot
+    let screenshot = null;
+    try {
+      screenshot = await captureSheetScreenshot(sheetName);
+    } catch (e) {
+      console.error('Screenshot capture failed:', e.message);
+      // Continue without screenshot
+    }
+
+    // Format date for message
+    const dateObj = new Date(date + 'T00:00:00+09:00');
+    const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
+    const formattedDate = `${dateObj.getMonth() + 1}월 ${dateObj.getDate()}일(${weekdays[dateObj.getDay()]})`;
+
+    // 임베드 데이터
+    const embedData = {
+      title: `📋 ${formattedDate} 면학 출결 현황`,
+      description: `시트: **${sheetName}**`,
+      fields: [
+        {
+          name: '1학년 결석',
+          value: `${grade1Count || 0}명`,
+          inline: true
+        },
+        {
+          name: '2학년 결석',
+          value: `${grade2Count || 0}명`,
+          inline: true
+        },
+        {
+          name: '총 결석',
+          value: `${(grade1Count || 0) + (grade2Count || 0)}명`,
+          inline: true
+        }
+      ]
+    };
+
+    // 부장님께 보낼 메시지 (클립보드 복사용)
+    const clipboardMessage = message || `안녕하세요, 이현경 부장님.
+${formattedDate} 겨울방학 방과후학교 조간면학 출결현황 보내드립니다.
+총 ${(grade1Count || 0) + (grade2Count || 0)}명의 학생 및 학부모님께 알림 발송 완료했습니다.
+[VIC 조간면학일지 스프레드시트] ${SPREADSHEET_URL}?usp=sharing
+감사합니다.`;
+
+    // Send to Discord with embed
+    await sendToDiscord(clipboardMessage, screenshot, embedData);
+
+    res.json({
+      success: true,
+      message: 'Discord 전송 완료',
+      sheetName,
+      hasScreenshot: !!screenshot
+    });
+
+  } catch (err) {
+    console.error('Discord report error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`VIC SMS Server running on port ${PORT}`);
   console.log(`Mode: ${isProductionMode() ? 'PRODUCTION' : 'TEST'}`);

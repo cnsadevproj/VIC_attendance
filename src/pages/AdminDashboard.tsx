@@ -7,6 +7,7 @@ import { SEAT_LAYOUTS } from '../config/seatLayouts'
 import { fetchTodayStaff, isTemporaryPeriod, type TodayStaff } from '../config/staffSchedule'
 import { exportToClipboard, exportToGoogleSheets, isAppsScriptConfigured, getSheetName, type AbsentStudent, type StudentWithNote } from '../services/googleSheets'
 import { sendCategorySms, type SmsStudent } from '../services/smsService'
+import { sendDiscordReport } from '../services/discordService'
 import { usePreAbsences } from '../hooks/usePreAbsences'
 import { getTodayKST } from '../utils/date'
 import { zoneAttendanceService, type ZoneAttendanceData } from '../services/zoneAttendanceService'
@@ -271,6 +272,7 @@ export default function AdminDashboard() {
   const [showExportModal, setShowExportModal] = useState(false)
   const [exportMessage, setExportMessage] = useState<string | null>(null)
   const [isExporting, setIsExporting] = useState(false)
+  const [isSendingDiscord, setIsSendingDiscord] = useState(false)
   const [showSmsModal, setShowSmsModal] = useState(false)
   const [smsMessage, setSmsMessage] = useState<string | null>(null)
   const [isSendingSms, setIsSendingSms] = useState(false)
@@ -1637,6 +1639,72 @@ export default function AdminDashboard() {
                     <div className="text-xs">시트 자동 저장을 사용하려면 Apps Script를 설정하세요.</div>
                   </div>
                 )}
+
+                {/* Discord 보고 버튼 */}
+                <button
+                  onClick={async () => {
+                    const dateObj = new Date(date + 'T00:00:00')
+                    const weekdays = ['일', '월', '화', '수', '목', '금', '토']
+                    const month = dateObj.getMonth() + 1
+                    const day = dateObj.getDate()
+                    const weekday = weekdays[dateObj.getDay()]
+                    const totalAbsent = absentStudentsForExport.length
+
+                    // 부장님께 보낼 메시지
+                    const reportMessage = `안녕하세요, 이현경 부장님.
+${month}월 ${day}일(${weekday}) 겨울방학 방과후학교 조간면학 출결현황 보내드립니다.
+총 ${totalAbsent}명의 학생 및 학부모님께 알림 발송 완료했습니다.
+[VIC 조간면학일지 스프레드시트] https://docs.google.com/spreadsheets/d/1gVFE9dxJ-tl6f4KFqe5z2XDZ2B5mVgzpFAj7s-XrLAs/edit?usp=sharing
+감사합니다.`
+
+                    // 클립보드에 복사
+                    try {
+                      await navigator.clipboard.writeText(reportMessage)
+                    } catch {
+                      console.error('클립보드 복사 실패')
+                    }
+
+                    // Discord 전송
+                    setIsSendingDiscord(true)
+                    try {
+                      await sendDiscordReport({
+                        date,
+                        sheetName: getSheetName(date),
+                        grade1Count: absentStudentsForExport.filter(s => s.grade === 1).length,
+                        grade2Count: absentStudentsForExport.filter(s => s.grade === 2).length,
+                        message: reportMessage
+                      })
+                      setExportMessage('✅ Discord 전송 완료! 메시지가 클립보드에 복사되었습니다.')
+                    } catch (err) {
+                      setExportMessage(`❌ Discord 전송 실패: ${err instanceof Error ? err.message : '알 수 없는 오류'}`)
+                    } finally {
+                      setIsSendingDiscord(false)
+                    }
+                  }}
+                  disabled={isSendingDiscord}
+                  className={`w-full py-3 font-semibold rounded-xl transition-colors flex items-center justify-center gap-2
+                    ${isSendingDiscord
+                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                      : 'bg-indigo-500 text-white hover:bg-indigo-600'
+                    }`}
+                >
+                  {isSendingDiscord ? (
+                    <>
+                      <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      Discord 전송 중...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/>
+                      </svg>
+                      Discord로 보고 (+ 클립보드 복사)
+                    </>
+                  )}
+                </button>
 
                 <div className="relative">
                   <div className="absolute inset-0 flex items-center">
