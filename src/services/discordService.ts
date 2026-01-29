@@ -30,9 +30,8 @@ function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
 
 async function renderTablePng(
   title: string,
-  headers: string[],
-  rows: string[][],
-  grade1Count: number
+  grade1Rows: string[][],
+  grade2Rows: string[][]
 ): Promise<Blob> {
   const fontSize = 15
   const titleFontSize = 17
@@ -42,27 +41,37 @@ async function renderTablePng(
   const boldFont = `bold ${fontSize}px "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif`
   const titleFont = `bold ${titleFontSize}px "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif`
 
-  const allRows = [headers, ...rows]
-  const colCount = headers.length
-  const colWidths = new Array(colCount).fill(0)
+  const subHeaders = ['좌석', '이름', '비고']
+  const colCount = subHeaders.length
+
+  const allCells = [
+    ...subHeaders,
+    ...grade1Rows.flat(),
+    ...grade2Rows.flat()
+  ]
 
   const measureCanvas = document.createElement('canvas')
   const mCtx = measureCanvas.getContext('2d')!
   mCtx.font = boldFont
 
-  for (const row of allRows) {
-    for (let i = 0; i < colCount; i++) {
-      const text = String(row[i] || '')
-      const w = mCtx.measureText(text).width
-      colWidths[i] = Math.max(colWidths[i], w + padding.x * 2)
-    }
+  const colWidths = new Array(colCount).fill(0)
+  for (let i = 0; i < allCells.length; i++) {
+    const colIdx = i % colCount
+    const w = mCtx.measureText(allCells[i]).width
+    colWidths[colIdx] = Math.max(colWidths[colIdx], w + padding.x * 2)
   }
   colWidths.forEach((w, i) => { colWidths[i] = Math.max(w, 60) })
 
+  const sectionWidth = colWidths.reduce((s, w) => s + w, 0)
+  const gapWidth = 4
   const rowHeight = fontSize + padding.y * 2
   const titleHeight = titleFontSize + padding.y * 2 + 4
-  const totalWidth = Math.ceil(colWidths.reduce((s, w) => s + w, 0)) + 2
-  const totalHeight = Math.ceil(titleHeight + rowHeight * allRows.length) + 2
+  const gradeHeaderHeight = rowHeight
+  const maxRows = Math.max(grade1Rows.length, grade2Rows.length)
+  const totalWidth = Math.ceil(sectionWidth * 2 + gapWidth) + 2
+  const totalHeight = Math.ceil(
+    titleHeight + gradeHeaderHeight + rowHeight + rowHeight * maxRows
+  ) + 2
 
   const dpr = 2
   const canvas = document.createElement('canvas')
@@ -88,44 +97,65 @@ async function renderTablePng(
   ctx.fillText(title, totalWidth / 2, y + titleHeight / 2)
   y += titleHeight
 
-  for (let rowIdx = 0; rowIdx < allRows.length; rowIdx++) {
-    const row = allRows[rowIdx]
-    const isHeader = rowIdx === 0
+  function drawMergedCell(
+    x: number, cy: number, w: number, h: number,
+    text: string, bg: string, fg: string, f: string
+  ) {
+    ctx.fillStyle = bg
+    ctx.fillRect(x, cy, w, h)
+    ctx.strokeStyle = borderColor
+    ctx.lineWidth = 1
+    ctx.strokeRect(x, cy, w, h)
+    ctx.fillStyle = fg
+    ctx.font = f
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(text, x + w / 2, cy + h / 2)
+  }
 
-    let x = 1
-    for (let colIdx = 0; colIdx < colCount; colIdx++) {
-      const cellWidth = Math.ceil(colWidths[colIdx])
-      const cellHeight = Math.ceil(rowHeight)
-      const text = String(row[colIdx] || '')
+  function drawCell(
+    x: number, cy: number, colIdx: number,
+    text: string, bg: string, fg: string, f: string
+  ) {
+    const w = Math.ceil(colWidths[colIdx])
+    drawMergedCell(x, cy, w, Math.ceil(rowHeight), text, bg, fg, f)
+  }
 
-      let bgColor: string
-      if (isHeader) {
-        bgColor = '#3d4777'
-      } else {
-        const di = rowIdx - 1
-        if (di < grade1Count) {
-          bgColor = di % 2 === 0 ? '#e8edff' : '#ffffff'
-        } else {
-          bgColor = (di - grade1Count) % 2 === 0 ? '#e8ffed' : '#ffffff'
-        }
-      }
+  const section1X = 1
+  const section2X = 1 + Math.ceil(sectionWidth) + gapWidth
 
-      ctx.fillStyle = bgColor
-      ctx.fillRect(x, y, cellWidth, cellHeight)
+  drawMergedCell(section1X, y, Math.ceil(sectionWidth), Math.ceil(gradeHeaderHeight),
+    '1학년', '#3d4777', '#ffffff', boldFont)
+  drawMergedCell(section2X, y, Math.ceil(sectionWidth), Math.ceil(gradeHeaderHeight),
+    '2학년', '#3d4777', '#ffffff', boldFont)
+  y += Math.ceil(gradeHeaderHeight)
 
-      ctx.strokeStyle = borderColor
-      ctx.lineWidth = 1
-      ctx.strokeRect(x, y, cellWidth, cellHeight)
+  let x1 = section1X
+  let x2 = section2X
+  for (let c = 0; c < colCount; c++) {
+    drawCell(x1, y, c, subHeaders[c], '#4a5490', '#ffffff', boldFont)
+    drawCell(x2, y, c, subHeaders[c], '#4a5490', '#ffffff', boldFont)
+    x1 += Math.ceil(colWidths[c])
+    x2 += Math.ceil(colWidths[c])
+  }
+  y += Math.ceil(rowHeight)
 
-      ctx.fillStyle = isHeader ? '#ffffff' : '#111111'
-      ctx.font = isHeader ? boldFont : font
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      ctx.fillText(text, x + cellWidth / 2, y + cellHeight / 2)
+  for (let r = 0; r < maxRows; r++) {
+    const bg1 = r % 2 === 0 ? '#e8edff' : '#ffffff'
+    const bg2 = r % 2 === 0 ? '#e8ffed' : '#ffffff'
 
-      x += cellWidth
+    x1 = section1X
+    x2 = section2X
+    for (let c = 0; c < colCount; c++) {
+      const t1 = r < grade1Rows.length ? grade1Rows[r][c] || '' : ''
+      const t2 = r < grade2Rows.length ? grade2Rows[r][c] || '' : ''
+      const emptyBg = '#f5f5f5'
+      drawCell(x1, y, c, t1, r < grade1Rows.length ? bg1 : emptyBg, '#111111', font)
+      drawCell(x2, y, c, t2, r < grade2Rows.length ? bg2 : emptyBg, '#111111', font)
+      x1 += Math.ceil(colWidths[c])
+      x2 += Math.ceil(colWidths[c])
     }
-    y += rowHeight
+    y += Math.ceil(rowHeight)
   }
 
   return canvasToBlob(canvas)
@@ -137,18 +167,15 @@ export async function sendDiscordReport(params: DiscordReportParams): Promise<Di
   const grade1 = absentStudents.filter(s => s.grade === 1)
   const grade2 = absentStudents.filter(s => s.grade === 2)
 
-  const headers = ['학년', '좌석', '이름', '비고']
-  const rows = [
-    ...grade1.map(s => ['1학년', s.seatId, s.name, s.note || '']),
-    ...grade2.map(s => ['2학년', s.seatId, s.name, s.note || ''])
-  ]
+  const grade1Rows = grade1.map(s => [s.seatId, s.name, s.note || ''])
+  const grade2Rows = grade2.map(s => [s.seatId, s.name, s.note || ''])
 
   try {
     const formData = new FormData()
 
-    if (rows.length > 0) {
+    if (grade1Rows.length > 0 || grade2Rows.length > 0) {
       const title = `VIC 조간면학 출결현황 - ${displayDate}`
-      const pngBlob = await renderTablePng(title, headers, rows, grade1.length)
+      const pngBlob = await renderTablePng(title, grade1Rows, grade2Rows)
 
       formData.append('payload_json', JSON.stringify({ content: message }))
       formData.append('files[0]', pngBlob, 'attendance_report.png')
