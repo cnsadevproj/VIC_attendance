@@ -255,6 +255,8 @@ export default function AdminDashboard() {
   const [isExporting, setIsExporting] = useState(false)
   const [isSendingDiscord, setIsSendingDiscord] = useState(false)
   const [showNotesModal, setShowNotesModal] = useState(false)
+  const [showSmsModal, setShowSmsModal] = useState(false)
+  const [excludePreAbsence, setExcludePreAbsence] = useState(false)
 
   const { getPreAbsenceInfo } = usePreAbsences()
 
@@ -936,6 +938,15 @@ export default function AdminDashboard() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
           </svg>
           내보내기
+        </button>
+        <button
+          onClick={() => setShowSmsModal(true)}
+          className="px-3 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 flex items-center gap-1"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+          </svg>
+          결석자 문자
         </button>
         <div className="flex gap-1 ml-auto">
           <button
@@ -1825,6 +1836,214 @@ ${displayDate} 겨울방학 방과후학교 조간면학 출결현황 보내드�
           </div>
         </div>
       )}
+
+      {showSmsModal && (() => {
+        const commuteAbsent: { studentId: string; name: string; seatId: string; isPreAbsence: boolean }[] = []
+        const dormOvernightAbsent: { studentId: string; name: string; seatId: string }[] = []
+        const dormNoOvernightAbsent: { studentId: string; name: string; seatId: string; isPreAbsence: boolean }[] = []
+
+        absentStudentsForExport.forEach((s) => {
+          const student = getStudentBySeatId(s.seatId)
+          if (!student) return
+
+          const preAbsInfo = getPreAbsenceInfo(student.studentId, date)
+          const isPreAbsence = !!preAbsInfo
+
+          if (student.residenceType === 'commute') {
+            commuteAbsent.push({ studentId: student.studentId, name: student.name, seatId: s.seatId, isPreAbsence })
+          } else {
+            if (preAbsInfo && preAbsInfo.type === '외박') {
+              dormOvernightAbsent.push({ studentId: student.studentId, name: student.name, seatId: s.seatId })
+            } else {
+              dormNoOvernightAbsent.push({ studentId: student.studentId, name: student.name, seatId: s.seatId, isPreAbsence })
+            }
+          }
+        })
+
+        const filteredCommute = excludePreAbsence
+          ? commuteAbsent.filter(s => !s.isPreAbsence)
+          : commuteAbsent
+        const filteredDormNoOvernight = excludePreAbsence
+          ? dormNoOvernightAbsent.filter(s => !s.isPreAbsence)
+          : dormNoOvernightAbsent
+
+        const copyCategory = async (students: { studentId: string; name: string }[], label: string) => {
+          const text = students.map(s => `${s.studentId} ${s.name}`).join('\n')
+          try {
+            await navigator.clipboard.writeText(text)
+            alert(`${label} ${students.length}명 복사 완료`)
+          } catch {
+            alert('복사 실패')
+          }
+        }
+
+        const copyAll = async () => {
+          const lines: string[] = []
+          if (filteredCommute.length > 0) {
+            lines.push('[통학생 - 학생+학부모]')
+            filteredCommute.forEach(s => lines.push(`${s.studentId} ${s.name}`))
+            lines.push('')
+          }
+          if (dormOvernightAbsent.length > 0) {
+            lines.push('[기숙사 외박 - 학부모만]')
+            dormOvernightAbsent.forEach(s => lines.push(`${s.studentId} ${s.name}`))
+            lines.push('')
+          }
+          if (filteredDormNoOvernight.length > 0) {
+            lines.push('[기숙사 외박X - 학생만]')
+            filteredDormNoOvernight.forEach(s => lines.push(`${s.studentId} ${s.name}`))
+          }
+          try {
+            await navigator.clipboard.writeText(lines.join('\n'))
+            alert('전체 복사 완료')
+          } catch {
+            alert('복사 실패')
+          }
+        }
+
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
+              <div className="bg-blue-500 text-white p-4 flex items-center justify-between flex-shrink-0">
+                <h2 className="text-lg font-bold">결석자 알림 발송</h2>
+                <button
+                  onClick={() => setShowSmsModal(false)}
+                  className="text-white/80 hover:text-white text-2xl leading-none"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="p-4 overflow-y-auto flex-1">
+                <div className="mb-4 text-center">
+                  <div className="text-sm text-gray-500">선택된 날짜</div>
+                  <div className="font-bold">
+                    {new Date(date + 'T00:00:00').toLocaleDateString('ko-KR', {
+                      year: 'numeric', month: 'long', day: 'numeric', weekday: 'short',
+                    })}
+                  </div>
+                </div>
+
+                <div className="mb-4 p-3 bg-amber-50 rounded-lg border border-amber-200">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={excludePreAbsence}
+                      onChange={(e) => setExcludePreAbsence(e.target.checked)}
+                      className="w-4 h-4 text-amber-600 rounded focus:ring-amber-500"
+                    />
+                    <span className="text-sm text-amber-800">사전결석 신청자 제외</span>
+                    {excludePreAbsence && (
+                      <span className="text-xs text-amber-600">
+                        (통학 {commuteAbsent.filter(s => s.isPreAbsence).length}명, 기숙 {dormNoOvernightAbsent.filter(s => s.isPreAbsence).length}명 제외)
+                      </span>
+                    )}
+                  </label>
+                </div>
+
+                <div className="mb-4 p-3 bg-blue-50 rounded-xl border border-blue-200">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <span className="font-bold text-blue-700">1. 통학생</span>
+                      <span className="ml-2 text-sm text-blue-600">({filteredCommute.length}명)</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">학생+학부모</span>
+                      {filteredCommute.length > 0 && (
+                        <button
+                          onClick={() => copyCategory(filteredCommute, '통학생')}
+                          className="text-xs bg-blue-200 text-blue-800 px-2 py-1 rounded hover:bg-blue-300"
+                        >
+                          복사
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {filteredCommute.length > 0 ? (
+                    <div className="text-xs text-gray-600 bg-white p-2 rounded max-h-24 overflow-y-auto font-mono">
+                      {filteredCommute.map(s => `${s.studentId} ${s.name}`).join(', ')}
+                    </div>
+                  ) : (
+                    <div className="text-sm text-gray-400 text-center py-2">해당 없음</div>
+                  )}
+                </div>
+
+                <div className="mb-4 p-3 bg-indigo-50 rounded-xl border border-indigo-200">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <span className="font-bold text-indigo-700">2. 기숙사 (외박 신청)</span>
+                      <span className="ml-2 text-sm text-indigo-600">({dormOvernightAbsent.length}명)</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded">학부모만</span>
+                      {dormOvernightAbsent.length > 0 && (
+                        <button
+                          onClick={() => copyCategory(dormOvernightAbsent, '기숙 외박')}
+                          className="text-xs bg-indigo-200 text-indigo-800 px-2 py-1 rounded hover:bg-indigo-300"
+                        >
+                          복사
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {dormOvernightAbsent.length > 0 ? (
+                    <div className="text-xs text-gray-600 bg-white p-2 rounded max-h-24 overflow-y-auto font-mono">
+                      {dormOvernightAbsent.map(s => `${s.studentId} ${s.name}`).join(', ')}
+                    </div>
+                  ) : (
+                    <div className="text-sm text-gray-400 text-center py-2">해당 없음</div>
+                  )}
+                </div>
+
+                <div className="mb-4 p-3 bg-purple-50 rounded-xl border border-purple-200">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <span className="font-bold text-purple-700">3. 기숙사 (외박 미신청)</span>
+                      <span className="ml-2 text-sm text-purple-600">({filteredDormNoOvernight.length}명)</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded">학생만</span>
+                      {filteredDormNoOvernight.length > 0 && (
+                        <button
+                          onClick={() => copyCategory(filteredDormNoOvernight, '기숙 외박X')}
+                          className="text-xs bg-purple-200 text-purple-800 px-2 py-1 rounded hover:bg-purple-300"
+                        >
+                          복사
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {filteredDormNoOvernight.length > 0 ? (
+                    <div className="text-xs text-gray-600 bg-white p-2 rounded max-h-24 overflow-y-auto font-mono">
+                      {filteredDormNoOvernight.map(s => `${s.studentId} ${s.name}`).join(', ')}
+                    </div>
+                  ) : (
+                    <div className="text-sm text-gray-400 text-center py-2">해당 없음</div>
+                  )}
+                </div>
+
+                {(filteredCommute.length > 0 || dormOvernightAbsent.length > 0 || filteredDormNoOvernight.length > 0) && (
+                  <button
+                    onClick={copyAll}
+                    className="w-full py-3 bg-blue-500 text-white font-bold rounded-xl hover:bg-blue-600 transition-colors"
+                  >
+                    전체 복사 (총 {filteredCommute.length + dormOvernightAbsent.length + filteredDormNoOvernight.length}명)
+                  </button>
+                )}
+              </div>
+
+              <div className="p-4 border-t flex-shrink-0">
+                <button
+                  onClick={() => setShowSmsModal(false)}
+                  className="w-full py-2 bg-gray-100 text-gray-700 font-medium rounded-xl hover:bg-gray-200 transition-colors"
+                >
+                  닫기
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
