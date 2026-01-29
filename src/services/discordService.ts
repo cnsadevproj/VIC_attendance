@@ -39,183 +39,168 @@ interface RenderParams {
 async function renderTablePng(params: RenderParams): Promise<Blob> {
   const { displayDate, grade1Rows, grade2Rows, noticeText } = params
 
-  const fontSize = 14
-  const titleFontSize = 16
-  const subtitleFontSize = 12
-  const padding = { x: 10, y: 7 }
-  const borderColor = '#999999'
-  const font = `${fontSize}px "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif`
-  const boldFont = `bold ${fontSize}px "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif`
-  const titleFont = `bold ${titleFontSize}px "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif`
-  const subtitleFont = `${subtitleFontSize}px "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif`
+  const px = { x: 10, y: 6 }
+  const border = '#bbbbbb'
+  const fs = 13
+  const titleFs = 22
+  const subFs = 12
+  const ff = (s: number, bold = false) =>
+    `${bold ? 'bold ' : ''}${s}px "Malgun Gothic","Apple SD Gothic Neo","Noto Sans KR",sans-serif`
 
-  const subHeaders = ['순번', '좌석번호', '이름', '비고']
-  const sectionColCount = subHeaders.length
+  const headers = ['순번', '좌석번호', '이름', '비고']
+  const colCount = headers.length
 
-  const maxRows = Math.max(grade1Rows.length, grade2Rows.length, 1)
+  const mc = document.createElement('canvas')
+  const mx = mc.getContext('2d')!
 
-  const measureCanvas = document.createElement('canvas')
-  const mCtx = measureCanvas.getContext('2d')!
+  const cw = new Array(colCount).fill(0)
+  mx.font = ff(fs, true)
+  headers.forEach((h, i) => { cw[i] = mx.measureText(h).width + px.x * 2 })
 
-  const colWidths = new Array(sectionColCount).fill(0)
-  mCtx.font = boldFont
-  for (let i = 0; i < sectionColCount; i++) {
-    colWidths[i] = mCtx.measureText(subHeaders[i]).width + padding.x * 2
-  }
-
-  mCtx.font = font
-  const allDataRows = [...grade1Rows, ...grade2Rows]
-  for (const row of allDataRows) {
-    for (let i = 0; i < sectionColCount; i++) {
-      const text = String(row[i] || '')
-      const w = mCtx.measureText(text).width + padding.x * 2
-      colWidths[i] = Math.max(colWidths[i], w)
+  mx.font = ff(fs)
+  for (const row of [...grade1Rows, ...grade2Rows]) {
+    for (let i = 0; i < colCount; i++) {
+      const w = mx.measureText(String(row[i] || '')).width + px.x * 2
+      cw[i] = Math.max(cw[i], w)
     }
   }
-  colWidths[0] = Math.max(colWidths[0], 45)
-  colWidths[1] = Math.max(colWidths[1], 70)
-  colWidths[2] = Math.max(colWidths[2], 55)
-  colWidths[3] = Math.max(colWidths[3], 80)
+  cw[0] = Math.max(cw[0], 42)
+  cw[1] = Math.max(cw[1], 65)
+  cw[2] = Math.max(cw[2], 50)
+  cw[3] = Math.max(cw[3], 100)
 
-  const sectionWidth = colWidths.reduce((s, w) => s + w, 0)
+  const secW = cw.reduce((a, b) => a + b, 0)
+  const gapW = 8
+  const rh = fs + px.y * 2
+  const maxR = Math.max(grade1Rows.length, grade2Rows.length, 1)
 
-  mCtx.font = boldFont
-  const noticeLabel = '[특이사항]'
-  const noticeLabelWidth = mCtx.measureText(noticeLabel).width + padding.x * 2
-  let noticeColWidth = Math.max(noticeLabelWidth, 75)
+  const titleH = titleFs + 14
+  const dateH = subFs + 10
+  const descH = subFs + 10
+  const spacerH = 4
 
-  if (noticeText) {
-    mCtx.font = subtitleFont
-    const lines = noticeText.split('\n')
-    for (const line of lines) {
-      const w = mCtx.measureText(line).width + padding.x * 2
-      noticeColWidth = Math.max(noticeColWidth, Math.min(w, 200))
-    }
-  }
+  mx.font = ff(subFs)
+  const noticeLines = noticeText ? noticeText.split('\n') : []
+  const noticeLineH = subFs + 4
 
-  const rowHeight = fontSize + padding.y * 2
-  const titleHeight = titleFontSize + padding.y * 2 + 6
-  const subtitleHeight = subtitleFontSize + padding.y * 2
-  const gradeHeaderHeight = rowHeight
-  const totalWidth = Math.ceil(sectionWidth * 2 + noticeColWidth) + 2
-  const totalHeight = Math.ceil(
-    titleHeight + subtitleHeight + gradeHeaderHeight + rowHeight + rowHeight * maxRows
-  ) + 2
+  const leftW = secW
+  const rightW = secW + gapW
+  const totalW = Math.ceil(secW * 2 + gapW) + 2
+  const topBlockH = titleH + dateH + descH + spacerH
+  const noticeBlockH = Math.max(topBlockH, noticeLines.length > 0 ? (subFs + 8) + noticeLines.length * noticeLineH + 8 : topBlockH)
+
+  const totalH = Math.ceil(noticeBlockH + rh + rh + rh * maxR) + 2
 
   const dpr = 2
   const canvas = document.createElement('canvas')
-  canvas.width = totalWidth * dpr
-  canvas.height = totalHeight * dpr
+  canvas.width = totalW * dpr
+  canvas.height = totalH * dpr
   const ctx = canvas.getContext('2d')!
   ctx.scale(dpr, dpr)
 
   ctx.fillStyle = '#ffffff'
-  ctx.fillRect(0, 0, totalWidth, totalHeight)
+  ctx.fillRect(0, 0, totalW, totalH)
 
-  function drawCell(
-    x: number, cy: number, w: number, h: number,
-    text: string, bg: string, fg: string, f: string,
-    align: CanvasTextAlign = 'center'
-  ) {
+  const drawRect = (x: number, y: number, w: number, h: number, bg: string) => {
     ctx.fillStyle = bg
-    ctx.fillRect(x, cy, w, h)
-    ctx.strokeStyle = borderColor
-    ctx.lineWidth = 1
-    ctx.strokeRect(x, cy, w, h)
-    ctx.fillStyle = fg
-    ctx.font = f
+    ctx.fillRect(x, y, w, h)
+    ctx.strokeStyle = border
+    ctx.lineWidth = 0.5
+    ctx.strokeRect(x, y, w, h)
+  }
+
+  const drawText = (
+    text: string, x: number, y: number, w: number, h: number,
+    font: string, color: string, align: CanvasTextAlign = 'center'
+  ) => {
+    ctx.fillStyle = color
+    ctx.font = font
     ctx.textAlign = align
     ctx.textBaseline = 'middle'
-    if (align === 'left') {
-      ctx.fillText(text, x + padding.x, cy + h / 2)
-    } else {
-      ctx.fillText(text, x + w / 2, cy + h / 2)
-    }
+    const tx = align === 'left' ? x + px.x : align === 'right' ? x + w - px.x : x + w / 2
+    ctx.fillText(text, tx, y + h / 2)
   }
 
   let y = 1
 
-  drawCell(1, y, totalWidth - 2, titleHeight,
-    'VIC 조간면학 출결현황', '#1a237e', '#ffffff', titleFont)
-  y += titleHeight
+  drawRect(1, y, leftW, titleH, '#ffffff')
+  drawText('2025-W VIC 조간면학 출결현황', 1, y, leftW, titleH, ff(titleFs, true), '#000000', 'left')
 
-  const subtitleLeft = `날짜 : ${displayDate}`
-  const subtitleRight = '※ 결석한 학생의 면학실 좌석번호/이름 명단입니다.'
-  const halfWidth = (totalWidth - 2) / 2
-  drawCell(1, y, halfWidth, subtitleHeight,
-    subtitleLeft, '#e8eaf6', '#1a237e', boldFont, 'left')
-  drawCell(1 + halfWidth, y, halfWidth, subtitleHeight,
-    subtitleRight, '#e8eaf6', '#555555', subtitleFont)
-  y += subtitleHeight
+  drawRect(1 + leftW, y, rightW, noticeBlockH, '#ffffff')
+  ctx.strokeStyle = '#999999'
+  ctx.lineWidth = 1
+  ctx.strokeRect(1 + leftW, y, rightW, noticeBlockH)
+  drawText('[특이사항]', 1 + leftW, y, rightW, subFs + 8, ff(subFs, true), '#000000', 'left')
+  if (noticeLines.length > 0) {
+    ctx.fillStyle = '#333333'
+    ctx.font = ff(subFs)
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'top'
+    for (let i = 0; i < noticeLines.length; i++) {
+      ctx.fillText(noticeLines[i], 1 + leftW + px.x, y + (subFs + 8) + 4 + i * noticeLineH)
+    }
+  }
 
-  const section1X = 1
-  const noticeX = 1 + Math.ceil(sectionWidth)
-  const section2X = noticeX + Math.ceil(noticeColWidth)
+  y += titleH
+  drawRect(1, y, leftW, dateH, '#ffffff')
+  drawText(`날짜 :   ${displayDate}`, 1, y, leftW, dateH, ff(subFs, true), '#000000', 'left')
+  y += dateH
 
-  drawCell(section1X, y, Math.ceil(sectionWidth), gradeHeaderHeight,
-    `1학년 (${grade1Rows.length}명)`, '#1565c0', '#ffffff', boldFont)
-  drawCell(noticeX, y, Math.ceil(noticeColWidth), gradeHeaderHeight,
-    noticeLabel, '#f57f17', '#ffffff', boldFont)
-  drawCell(section2X, y, Math.ceil(sectionWidth), gradeHeaderHeight,
-    `2학년 (${grade2Rows.length}명)`, '#2e7d32', '#ffffff', boldFont)
-  y += gradeHeaderHeight
+  y += spacerH
 
-  let x1 = section1X
-  let x2 = section2X
-  for (let c = 0; c < sectionColCount; c++) {
-    const w = Math.ceil(colWidths[c])
-    drawCell(x1, y, w, rowHeight, subHeaders[c], '#37474f', '#ffffff', boldFont)
-    drawCell(x2, y, w, rowHeight, subHeaders[c], '#37474f', '#ffffff', boldFont)
+  drawRect(1, y, leftW, descH, '#ffffff')
+  drawText('※ 결석한 학생의 면학실 좌석번호/이름 명단입니다.', 1, y, leftW, descH, ff(subFs), '#000000', 'left')
+  y += descH
+
+  y = 1 + noticeBlockH
+
+  const s1x = 1
+  const s2x = 1 + Math.ceil(secW) + gapW
+
+  drawRect(s1x, y, Math.ceil(secW), rh, '#fff9c4')
+  drawText('1학년', s1x, y, Math.ceil(secW), rh, ff(fs, true), '#000000')
+  drawRect(s2x, y, Math.ceil(secW), rh, '#fce4ec')
+  drawText('2학년', s2x, y, Math.ceil(secW), rh, ff(fs, true), '#000000')
+
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(s1x + Math.ceil(secW), y, gapW, rh)
+
+  y += rh
+
+  let x1 = s1x, x2 = s2x
+  for (let c = 0; c < colCount; c++) {
+    const w = Math.ceil(cw[c])
+    drawRect(x1, y, w, rh, '#e8e8e8')
+    drawText(headers[c], x1, y, w, rh, ff(fs, true), '#000000')
+    drawRect(x2, y, w, rh, '#e8e8e8')
+    drawText(headers[c], x2, y, w, rh, ff(fs, true), '#000000')
     x1 += w
     x2 += w
   }
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(s1x + Math.ceil(secW), y, gapW, rh)
+  y += rh
 
-  const noticeDataHeight = rowHeight * maxRows
-  ctx.fillStyle = '#fffde7'
-  ctx.fillRect(noticeX, y, Math.ceil(noticeColWidth), rowHeight + noticeDataHeight)
-  ctx.strokeStyle = borderColor
-  ctx.lineWidth = 1
-  ctx.strokeRect(noticeX, y, Math.ceil(noticeColWidth), rowHeight + noticeDataHeight)
-
-  if (noticeText) {
-    ctx.fillStyle = '#333333'
-    ctx.font = subtitleFont
-    ctx.textAlign = 'left'
-    ctx.textBaseline = 'top'
-    const lines = noticeText.split('\n')
-    const lineHeight = subtitleFontSize + 4
-    const startY = y + padding.y
-    for (let i = 0; i < lines.length; i++) {
-      ctx.fillText(lines[i], noticeX + padding.x, startY + i * lineHeight)
-    }
-  } else {
-    ctx.fillStyle = '#aaaaaa'
-    ctx.font = subtitleFont
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.fillText('없음', noticeX + Math.ceil(noticeColWidth) / 2, y + (rowHeight + noticeDataHeight) / 2)
-  }
-  y += rowHeight
-
-  for (let r = 0; r < maxRows; r++) {
-    const bgEven = '#f5f5f5'
-    const bgOdd = '#ffffff'
-    const bg = r % 2 === 0 ? bgEven : bgOdd
-
-    x1 = section1X
-    x2 = section2X
-    for (let c = 0; c < sectionColCount; c++) {
-      const w = Math.ceil(colWidths[c])
+  for (let r = 0; r < maxR; r++) {
+    x1 = s1x
+    x2 = s2x
+    for (let c = 0; c < colCount; c++) {
+      const w = Math.ceil(cw[c])
       const t1 = r < grade1Rows.length ? grade1Rows[r][c] || '' : ''
       const t2 = r < grade2Rows.length ? grade2Rows[r][c] || '' : ''
-      const emptyBg = '#eeeeee'
       const align: CanvasTextAlign = c === 3 ? 'left' : 'center'
-      drawCell(x1, y, w, rowHeight, t1, r < grade1Rows.length ? bg : emptyBg, '#111111', font, align)
-      drawCell(x2, y, w, rowHeight, t2, r < grade2Rows.length ? bg : emptyBg, '#111111', font, align)
+
+      drawRect(x1, y, w, rh, '#ffffff')
+      if (t1) drawText(t1, x1, y, w, rh, ff(fs), '#000000', align)
+      drawRect(x2, y, w, rh, '#ffffff')
+      if (t2) drawText(t2, x2, y, w, rh, ff(fs), '#000000', align)
+
       x1 += w
       x2 += w
     }
-    y += rowHeight
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(s1x + Math.ceil(secW), y, gapW, rh)
+    y += rh
   }
 
   return canvasToBlob(canvas)
