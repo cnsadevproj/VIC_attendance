@@ -1584,7 +1584,8 @@ ${displayDate} 겨울방학 방과후학교 조간면학 출결현황 보내드�
                       const result = await sendDiscordReport({
                         message: reportMessage,
                         displayDate,
-                        absentStudents: absentStudentsForExport
+                        absentStudents: absentStudentsForExport,
+                        noticeText
                       })
                       if (result.success) {
                         setExportMessage('✅ Discord 전송 완료! (테이블 이미지 포함) 메시지가 클립보드에 복사되었습니다.')
